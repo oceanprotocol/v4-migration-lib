@@ -12,10 +12,22 @@ import ERC20Template from './../../src/artifacts/ERC20Template.json'
 import FixedRate from './../../src/artifacts/FixedRateExchange.json'
 import OPFCommunityFeeCollector from './../../src/artifacts/OPFCommunityFeeCollector.json'
 import PoolTemplate from './../../src/artifacts/BPool.json'
+import { Provider } from '../../src/provider/Provider'
+import { getAndConvertDDO } from '../../src/DDO/convertDDO'
+import { FileMetadata, DDO } from '../../src/@types'
+import { SHA256 } from 'crypto-js'
+import { getHash } from '../../src/utils'
 import { ZERO_ADDRESS, ONE_ADDRESS } from '../../src/utils/Constants'
 import BN from 'bn.js'
 const web3 = new Web3('http://127.0.0.1:8545')
-
+const providerUrl = 'http://127.0.0.1:8030'
+const files = [
+  {
+    type: 'url',
+    url: 'https://raw.githubusercontent.com/oceanprotocol/testdatasets/main/shs_dataset_test.txt',
+    method: 'GET'
+  }
+]
 describe('Migration test', () => {
   let v3DtOwner: string
   let user1: string
@@ -238,33 +250,65 @@ describe('Migration test', () => {
       ]
       const metaDataState = '1'
 
-      const txReceipt = await migration.migratePoolAsset(
+      const txReceipt = await migration.liquidateAndCreatePool(
         daemon,
         migrationAddress,
         v3pool1Address,
-        ['1', '1'],
-        metaDataState,
-        flagsAndData
+        ['1', '1']
       )
       console.log(txReceipt)
-      // assert(txReceipt.events.Completed.event === 'Completed')
-      // const args = txReceipt.events.Completed.returnValues
-
-      // expect(args.poolAddress).to.equal(v3pool1Address)
-      // // Pool migration has been completed (index 3)
-      // expect(args.status).to.equal('3')
-
-      const tokensDetails = await migration.getTokensDetails(
-        migrationAddress,
-        v3pool1Address
+      assert(txReceipt.events.NewPool.event === 'NewPool')
+      const args = txReceipt.events.NewPool.returnValues
+      console.log(args)
+      const did1 = 'did:op:a2B8b3aC4207CFCCbDe4Ac7fa40214fd00A2BA71'
+      const ddo1 = await getAndConvertDDO(
+        did1,
+        args.nftAddress,
+        args.newDTAddress
       )
+      console.log(ddo1)
+      // assert(
+      //   ddo1.metadata.name === '🖼  DataUnion.app - Image & Annotation Vault  📸'
+      // )
+      // assert(ddo1.metadata.type === 'dataset')
+
+      const providerInstance = new Provider()
+      const valid = await providerInstance.isValidProvider(providerUrl)
+      assert(valid === true)
+
       const nft = new web3.eth.Contract(
         ERC721Template.abi as AbiItem[],
-        tokensDetails.erc721Address
+        args.nftAddress
       )
 
-      // NFT has been transferred to the owner
-      expect(await nft.methods.ownerOf(1).call()).to.equal(v3DtOwner)
+      // NFT has been transferred to the migration address
+      expect(await nft.methods.ownerOf(1).call()).to.equal(migrationAddress)
+
+      // UNCOMMENT TO SEE THE ISSUE
+      // const encryptedFiles = await providerInstance.encrypt(files, providerUrl)
+      // console.log(encryptedFiles)
+      // const poolDdo = { ...ddo1 }
+      // poolDdo.metadata.name = 'test-dataset-pool'
+      // poolDdo.services[0].files = encryptedFiles
+
+      // const chain = await web3.eth.getChainId()
+      // poolDdo.chainId = chain
+      // poolDdo.id =
+      //   'did:op:' +
+      //   SHA256(
+      //     web3.utils.toChecksumAddress(args.nftAddress) + chain.toString(10)
+      //   )
+
+      // // const AssetValidation: ValidateMetadata = await aquarius.validate(poolDdo)
+      // // assert(AssetValidation.valid === true, 'Published asset is not valid')
+
+      // const encryptedDdo = await providerInstance.encrypt(poolDdo, providerUrl)
+
+      // const metadataHash = getHash(JSON.stringify(poolDdo))
+
+      // // assert(AssetValidation.hash === '0x' + metadataHash, 'Metadata hash is a missmatch')
+      // console.log(encryptedDdo, 'encryptedDDO boom')
+      // console.log(metadataHash, 'metadataHash boom')
     })
   })
 })
